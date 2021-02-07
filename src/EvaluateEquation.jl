@@ -38,7 +38,7 @@ function deg2_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Option
     @return_on_false complete cumulator
     (array2, complete2) = evalTreeArray(tree.r, cX, options)
     @return_on_false complete2 cumulator
-    op = options.cuda_binops[op_idx]
+    op = options.binops[op_idx]
     cumulator .= op.(cumulator, array2)
     any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
     return (cumulator, any_bad_numbers)
@@ -48,7 +48,7 @@ function deg1_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Option
     n = size(cX, 2)
     (cumulator, complete) = evalTreeArray(tree.l, cX, options)
     @return_on_false complete cumulator
-    op = options.cuda_unaops[op_idx]
+    op = options.unaops[op_idx]
     cumulator .= op.(cumulator)
     any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
     return (cumulator, any_bad_numbers)
