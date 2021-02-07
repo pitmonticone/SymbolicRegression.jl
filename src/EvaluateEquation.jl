@@ -41,7 +41,7 @@ function deg2_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Option
     @return_on_false complete2 cumulator
     op = options.binops[op_idx]
     cumulator .= op.(cumulator, array2)
-    any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
+    any_bad_numbers = (CUDA.any(CUDA.isnan.(cumulator)) || !CUDA.all(CUDA.isfinite.(cumulator)))
     return (cumulator, !any_bad_numbers)
 end
 
@@ -51,7 +51,7 @@ function deg1_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Option
     @return_on_false complete cumulator
     op = options.unaops[op_idx]
     cumulator .= op.(cumulator)
-    any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
+    any_bad_numbers = (CUDA.any(CUDA.isnan.(cumulator)) || !CUDA.all(CUDA.isfinite.(cumulator)))
     return (cumulator, !any_bad_numbers)
 end
 
@@ -77,22 +77,6 @@ function evalTreeArray(tree::Node, cX::AbstractMatrix{T}, options::Options)::Tup
             deg2_eval(tree, cX, Val(tree.op), options)
         end
     end
-end
-
-function deg2_eval_unfused(tree::Node, cX::AbstractMatrix{T}, ::Val{op_idx}, options::Options)::Tuple{AbstractVector{T}, Bool} where {T<:Real,op_idx}
-    n = size(cX, 2)
-    (cumulator, complete) = unfusedEvalTreeArray(tree.l, cX, options)
-    @return_on_false complete cumulator
-    (array2, complete2) = unfusedEvalTreeArray(tree.r, cX, options)
-    @return_on_false complete2 cumulator
-    op = options.binops[op_idx]
-    finished_loop = true
-    @inbounds @simd for j=1:n
-        x = op(cumulator[j], array2[j])::T
-        @break_on_check x finished_loop
-        cumulator[j] = x
-    end
-    return (cumulator, finished_loop)
 end
 
 function deg2_eval(tree::Node, cX::AbstractMatrix{T}, ::Val{op_idx}, options::Options)::Tuple{AbstractVector{T}, Bool} where {T<:Real,op_idx}
