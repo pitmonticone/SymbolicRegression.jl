@@ -19,6 +19,7 @@ macro return_on_false(flag, retval)
 end
 
 function evalTreeArray(tree::Node, cX::CuArray{T, 2}, options::Options)::Tuple{CuArray{T, 1}, Bool} where {T<:CUDA_TYPES}
+    n = size(cX, 2)
     if tree.degree == 0
         if tree.constant
             (CUDA.fill(convert(T, tree.val), n), true)
@@ -41,7 +42,7 @@ function deg2_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Option
     op = options.binops[op_idx]
     cumulator .= op.(cumulator, array2)
     any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
-    return (cumulator, any_bad_numbers)
+    return (cumulator, !any_bad_numbers)
 end
 
 function deg1_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Options)::Tuple{CuArray{T, 1}, Bool} where {T<:CUDA_TYPES,op_idx}
@@ -51,7 +52,7 @@ function deg1_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Option
     op = options.unaops[op_idx]
     cumulator .= op.(cumulator)
     any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
-    return (cumulator, any_bad_numbers)
+    return (cumulator, !any_bad_numbers)
 end
 
 

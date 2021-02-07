@@ -130,10 +130,18 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
 
     if dataset.weighted
         avgy = sum(dataset.y .* dataset.weights)/sum(dataset.weights)
-        baselineMSE = MSE(dataset.y, ones(T, dataset.n) .* avgy, dataset.weights)
+        if typeof(dataset.X) <: CuArray
+            baselineMSE = MSE(dataset.y, CUDA.ones(T, dataset.n) .* avgy, dataset.weights)
+        else
+            baselineMSE = MSE(dataset.y, ones(T, dataset.n) .* avgy, dataset.weights)
+        end
     else
         avgy = sum(dataset.y)/dataset.n
-        baselineMSE = MSE(dataset.y, ones(T, dataset.n) .* avgy)
+        if typeof(dataset.X) <: CuArray
+            baselineMSE = MSE(dataset.y, CUDA.ones(T, dataset.n) .* avgy)
+        else
+            baselineMSE = MSE(dataset.y, ones(T, dataset.n) .* avgy)
+        end
     end
 
     if options.seed !== nothing
