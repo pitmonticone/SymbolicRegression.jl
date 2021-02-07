@@ -24,6 +24,12 @@ function Dataset(
         varMap = ["x$(i)" for i=1:nfeatures]
     end
 
+    if (typeof(X) <: CuArray) || (typeof(y) <: CuArray) || (weighted == true && typeof(weights) <: CuArray)
+        if !((typeof(X) <: CuArray) && (typeof(y) <: CuArray) && (weighted == false || typeof(weights) <: CuArray))
+            AssertionError("If one array is on the GPU, they all need to be on the GPU.")
+        end
+    end
+
     return Dataset{T}(X, y, n, nfeatures, weighted, weights, varMap)
 
 end
