@@ -22,14 +22,14 @@ function evalTreeArray(tree::Node, cX::CuArray{T, 2}, options::Options)::Tuple{C
     n = size(cX, 2)
     if tree.degree == 0
         if tree.constant
-            (CUDA.fill(convert(T, tree.val), n), true)
+            return (CUDA.fill(convert(T, tree.val), n), true)
         else
-            (CUDA.copy(cX[tree.feature, :]), true)
+            return (CUDA.copy(cX[tree.feature, :]), true)
         end
     elseif tree.degree == 1
-        deg1_eval(tree, cX, Val(tree.op), options)
+        return deg1_eval(tree, cX, Val(tree.op), options)
     else
-        deg2_eval(tree, cX, Val(tree.op), options)
+        return deg2_eval(tree, cX, Val(tree.op), options)
     end
 end
 
