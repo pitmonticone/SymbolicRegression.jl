@@ -44,6 +44,7 @@ using Distributed
 using Printf: @printf
 using Pkg
 using Random: seed!
+using CUDA
 include("ProgramConstants.jl")
 include("Operators.jl")
 include("Options.jl")

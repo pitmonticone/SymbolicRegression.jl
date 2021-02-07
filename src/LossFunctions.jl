@@ -2,13 +2,13 @@ using Random: randperm
 
 # Sum of square error between two arrays
 function SSE(x::AbstractArray{T}, y::AbstractArray{T})::T where {T<:Real}
-    diff = (x - y)
+    diff = (x .- y)
     return sum(diff .* diff)
 end
 
 # Sum of square error between two arrays, with weights
 function SSE(x::AbstractArray{T}, y::AbstractArray{T}, w::AbstractArray{T})::T where {T<:Real}
-    diff = (x - y)
+    diff = (x .- y)
     return sum(diff .* diff .* w)
 end
 

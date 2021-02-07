@@ -1,14 +1,59 @@
-# Evaluate an equation over an array of datapoints
-# This one is just for reference. The fused one should be faster.
-function unfusedEvalTreeArray(tree::Node, cX::AbstractMatrix{T}, options::Options)::Tuple{AbstractVector{T}, Bool} where {T<:Real}
+const CUDA_TYPES = Union{Float32, Float64}
+
+"""
+Break whenever there is a nan or inf. Since so many equations give
+such numbers, it saves a lot of computation to just skip computation,
+and return a large loss!
+"""
+macro break_on_check(val, flag)
+    :(if isnan($(esc(val))) || !isfinite($(esc(val)))
+          $(esc(flag)) = false
+          break
+    end)
+end
+
+macro return_on_false(flag, retval)
+    :(if !$(esc(flag))
+          return ($(esc(retval)), false)
+    end)
+end
+
+function evalTreeArray(tree::Node, cX::CuArray{T, 2}, options::Options)::Tuple{CuArray{T, 1}, Bool} where {T<:CUDA_TYPES}
     if tree.degree == 0
-        deg0_eval(tree, cX, options)
+        if tree.constant
+            (CUDA.fill(convert(T, tree.val), n), true)
+        else
+            (CUDA.copy(cX[tree.feature, :]), true)
+        end
     elseif tree.degree == 1
-        deg1_eval_unfused(tree, cX, Val(tree.op), options)
+        deg1_eval(tree, cX, Val(tree.op), options)
     else
-        deg2_eval_unfused(tree, cX, Val(tree.op), options)
+        deg2_eval(tree, cX, Val(tree.op), options)
     end
 end
+
+function deg2_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Options)::Tuple{CuArray{T, 1}, Bool} where {T<:CUDA_TYPES,op_idx}
+    n = size(cX, 2)
+    (cumulator, complete) = evalTreeArray(tree.l, cX, options)
+    @return_on_false complete cumulator
+    (array2, complete2) = evalTreeArray(tree.r, cX, options)
+    @return_on_false complete2 cumulator
+    op = options.cuda_binops[op_idx]
+    cumulator .= op.(cumulator, array2)
+    any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
+    return (cumulator, any_bad_numbers)
+end
+
+function deg1_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Options)::Tuple{CuArray{T, 1}, Bool} where {T<:CUDA_TYPES,op_idx}
+    n = size(cX, 2)
+    (cumulator, complete) = evalTreeArray(tree.l, cX, options)
+    @return_on_false complete cumulator
+    op = options.cuda_unaops[op_idx]
+    cumulator .= op.(cumulator)
+    any_bad_numbers = (CUDA.sum(CUDA.isnan.(cumulator)) + CUDA.sum(.!CUDA.isfinite.(cumulator))) > 0
+    return (cumulator, any_bad_numbers)
+end
+
 
 # Fuse doublets and triplets of operations for lower memory usage:
 function evalTreeArray(tree::Node, cX::AbstractMatrix{T}, options::Options)::Tuple{AbstractVector{T}, Bool} where {T<:Real}
@@ -31,22 +76,6 @@ function evalTreeArray(tree::Node, cX::AbstractMatrix{T}, options::Options)::Tup
             deg2_eval(tree, cX, Val(tree.op), options)
         end
     end
-end
-
-# Break whenever there is a nan or inf. Since so many equations give
-# such numbers, it saves a lot of computation to just skip computation,
-# and return a large loss!
-macro break_on_check(val, flag)
-    :(if isnan($(esc(val))) || !isfinite($(esc(val)))
-          $(esc(flag)) = false
-          break
-    end)
-end
-
-macro return_on_false(flag, retval)
-    :(if !$(esc(flag))
-          return ($(esc(retval)), false)
-    end)
 end
 
 function deg2_eval_unfused(tree::Node, cX::AbstractMatrix{T}, ::Val{op_idx}, options::Options)::Tuple{AbstractVector{T}, Bool} where {T<:Real,op_idx}
