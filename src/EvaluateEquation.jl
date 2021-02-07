@@ -24,7 +24,7 @@ function evalTreeArray(tree::Node, cX::CuArray{T, 2}, options::Options)::Tuple{C
         if tree.constant
             return (CUDA.fill(convert(T, tree.val), n), true)
         else
-            return (CUDA.copy(cX[tree.feature, :]), true)
+            return (cX[tree.feature, :], true)
         end
     elseif tree.degree == 1
         return deg1_eval(tree, cX, Val(tree.op), options)
@@ -34,23 +34,21 @@ function evalTreeArray(tree::Node, cX::CuArray{T, 2}, options::Options)::Tuple{C
 end
 
 function deg2_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Options)::Tuple{CuArray{T, 1}, Bool} where {T<:CUDA_TYPES,op_idx}
-    n = size(cX, 2)
     (cumulator, complete) = evalTreeArray(tree.l, cX, options)
     @return_on_false complete cumulator
     (array2, complete2) = evalTreeArray(tree.r, cX, options)
     @return_on_false complete2 cumulator
     op = options.binops[op_idx]
-    cumulator .= op.(cumulator, array2)
+    CUDA.@sync cumulator .= op.(cumulator, array2)
     any_bad_numbers = (CUDA.any(CUDA.isnan.(cumulator)) || !CUDA.all(CUDA.isfinite.(cumulator)))
     return (cumulator, !any_bad_numbers)
 end
 
 function deg1_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Options)::Tuple{CuArray{T, 1}, Bool} where {T<:CUDA_TYPES,op_idx}
-    n = size(cX, 2)
     (cumulator, complete) = evalTreeArray(tree.l, cX, options)
     @return_on_false complete cumulator
     op = options.unaops[op_idx]
-    cumulator .= op.(cumulator)
+    CUDA.@sync cumulator .= op.(cumulator)
     any_bad_numbers = (CUDA.any(CUDA.isnan.(cumulator)) || !CUDA.all(CUDA.isfinite.(cumulator)))
     return (cumulator, !any_bad_numbers)
 end
