@@ -56,7 +56,21 @@ function deg1_eval(tree::Node, cX::CuArray{T, 2}, ::Val{op_idx}, options::Option
 end
 
 
-# Fuse doublets and triplets of operations for lower memory usage:
+"""
+    evalTreeArray(tree::Node, cX::AbstractMatrix{T}, options::Options)
+
+Evaluate a binary tree (equation) over a given input data matrix. The
+options contain all of the operators used. This function fuses doublets
+and triplets of operations for lower memory usage.
+
+# Returns
+
+- `(output, complete)::Tuple{AbstractVector{T}, Bool}`: the result,
+    which is a 1D array, as well as if the evaluation completed
+    successfully (true/false). A `false` complete means an infinity
+    or nan was encountered, and a large loss should be assigned
+    to the equation.
+"""
 function evalTreeArray(tree::Node, cX::AbstractMatrix{T}, options::Options)::Tuple{AbstractVector{T}, Bool} where {T<:Real}
     if tree.degree == 0
         deg0_eval(tree, cX, options)
@@ -130,7 +144,7 @@ function deg0_eval(tree::Node, cX::AbstractMatrix{T}, options::Options)::Tuple{A
     if tree.constant
         return (fill(convert(T, tree.val), n), true)
     else
-        return (copy(cX[tree.feature, :]), true)
+        return (cX[tree.feature, :], true)
     end
 end
 

@@ -6,12 +6,21 @@ mutable struct HallOfFame
     # Arranged by complexity - store one at each.
 end
 
+"""
+    HallOfFame(options::Options)
+
+Create empty HallOfFame
+"""
 function HallOfFame(options::Options)
     actualMaxsize = options.maxsize + maxdegree
     HallOfFame([PopMember(Node(convert(CONST_TYPE, 1)), 1f9) for i=1:actualMaxsize], [false for i=1:actualMaxsize])
 end
 
 
+"""
+    calculateParetoFrontier(dataset::Dataset{T}, hallOfFame::HallOfFame,
+                            options::Options) where {T<:Real}
+"""
 function calculateParetoFrontier(dataset::Dataset{T},
                                  hallOfFame::HallOfFame,
                                  options::Options)::Array{PopMember, 1} where {T<:Real}
@@ -40,6 +49,15 @@ function calculateParetoFrontier(dataset::Dataset{T},
     return dominating
 end
 
+"""
+    calculateParetoFrontier(X::AbstractMatrix{T}, y::AbstractVector{T},
+                            hallOfFame::HallOfFame, options::Options;
+                            weights=nothing, varMap=nothing) where {T<:Real}
+
+Compute the dominating Pareto frontier for a given hallOfFame. This
+is the list of equations where each equation has a better loss than all
+simpler equations.
+"""
 function calculateParetoFrontier(X::AbstractMatrix{T},
                                  y::AbstractVector{T},
                                  hallOfFame::HallOfFame,
