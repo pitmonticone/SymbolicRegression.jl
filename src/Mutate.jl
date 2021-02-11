@@ -1,3 +1,12 @@
+using FromFile
+@from "Core.jl" import Node, copyNode, Options, Dataset
+@from "EquationUtils.jl" import countNodes, countConstants, countDepth
+@from "LossFunctions.jl" import scoreFunc, scoreFuncBatch
+@from "CheckConstraints.jl" import check_constraints
+@from "PopMember.jl" import PopMember
+@from "MutationFunctions.jl" import genRandomTree, mutateConstant, mutateOperator, appendRandomOp, prependRandomOp, insertRandomOp, deleteRandomOp
+@from "SimplifyEquation.jl" import simplifyTree, combineOperators, simplifyWithSymbolicUtils
+
 # Go through one simulated options.annealing mutation cycle
 #  exp(-delta/T) defines probability of accepting a change
 function nextGeneration(dataset::Dataset{T},
@@ -92,17 +101,7 @@ function nextGeneration(dataset::Dataset{T},
             return PopMember(tree, beforeLoss)
         end
 
-        # Check for illegal equations
-        for i=1:options.nbin
-            if successful_mutation && flagBinOperatorComplexity(tree, Val(i), options)
-                successful_mutation = false
-            end
-        end
-        for i=1:options.nuna
-            if successful_mutation && flagUnaOperatorComplexity(tree, Val(i), options)
-                successful_mutation = false
-            end
-        end
+        successful_mutation = successful_mutation && check_constraints(tree, options)
 
         attempts += 1
     end

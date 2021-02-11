@@ -1,3 +1,7 @@
+using FromFile
+@from "Core.jl" import Node, Options
+@from "EquationUtils.jl" import countNodes
+
 # Check if any binary operator are overly complex
 function flagBinOperatorComplexity(tree::Node, ::Val{op}, options::Options)::Bool where {op}
     if tree.degree == 0
@@ -39,4 +43,23 @@ function flagUnaOperatorComplexity(tree::Node, ::Val{op}, options::Options)::Boo
     else
         return (flagUnaOperatorComplexity(tree.l, Val(op), options) || flagUnaOperatorComplexity(tree.r, Val(op), options))
     end
+end
+
+"""Check if user-passed constraints are violated or not"""
+function check_constraints(tree::Node, options::Options)::Bool
+    for i=1:options.nbin
+        if options.bin_constraints[i] == (-1, -1)
+            continue
+        elseif flagBinOperatorComplexity(tree, Val(i), options)
+            return false
+        end
+    end
+    for i=1:options.nuna
+        if options.una_constraints[i] == -1
+            continue
+        elseif flagUnaOperatorComplexity(tree, Val(i), options)
+            return false
+        end
+    end
+    return true
 end

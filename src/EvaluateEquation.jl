@@ -1,3 +1,5 @@
+using FromFile
+@from "Core.jl" import Node, Options
 const CUDA_TYPES = Union{Float32, Float64}
 
 """

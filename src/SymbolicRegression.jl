@@ -21,6 +21,7 @@ export Population,
     custom_simplify,
     simplifyWithSymbolicUtils,
     combineOperators,
+    genRandomTree,
 
     #Operators:
     plus,
@@ -45,26 +46,26 @@ using Printf: @printf
 using Pkg
 using Random: seed!
 using CUDA
-include("ProgramConstants.jl")
-include("Operators.jl")
-include("Options.jl")
-include("Dataset.jl")
-include("Equation.jl")
-include("LossFunctions.jl")
-include("Utils.jl")
-include("EvaluateEquation.jl")
-include("MutationFunctions.jl")
-include("InterfaceSymbolicUtils.jl")
-include("CustomSymbolicUtilsSimplification.jl")
-include("SimplifyEquation.jl")
-include("PopMember.jl")
-include("HallOfFame.jl")
-include("CheckConstraints.jl")
-include("Mutate.jl")
-include("Population.jl")
-include("RegularizedEvolution.jl")
-include("SingleIteration.jl")
-include("ConstantOptimization.jl")
+using FromFile
+using Reexport
+@reexport using LossFunctions
+
+@from "Core.jl" import CONST_TYPE, maxdegree, Dataset, Node, copyNode, Options, plus, sub, mult, square, cube, pow, div, log_abs, log2_abs, log10_abs, sqrt_abs, neg, greater, greater, relu, logical_or, logical_and
+@from "Utils.jl" import debug, debug_inline, is_anonymous_function
+@from "EquationUtils.jl" import countNodes, printTree, stringTree
+@from "EvaluateEquation.jl" import evalTreeArray
+@from "CheckConstraints.jl" import check_constraints
+@from "MutationFunctions.jl" import genRandomTree
+@from "LossFunctions.jl" import EvalLoss, Loss, scoreFunc
+@from "PopMember.jl" import PopMember, copyPopMember
+@from "Population.jl" import Population, bestSubPop
+@from "HallOfFame.jl" import HallOfFame, calculateParetoFrontier
+@from "SingleIteration.jl" import SRCycle, OptimizeAndSimplifyPopulation
+@from "InterfaceSymbolicUtils.jl" import node_to_symbolic, symbolic_to_node
+@from "CustomSymbolicUtilsSimplification.jl" import custom_simplify
+@from "SimplifyEquation.jl" import simplifyWithSymbolicUtils, combineOperators, simplifyTree
+
+include("Configure.jl")
 include("Deprecates.jl")
 
 
@@ -75,6 +76,8 @@ Perform a distributed equation search for functions which
 describe the mapping f(X[:, j]) ≈ y[j]. Options are
 configured using SymbolicRegression.Options(...),
 which should be passed as a keyword argument to options.
+One can turn off parallelism with `numprocs=0`,
+which is useful for debugging and profiling.
 
 # Arguments
 - `X::AbstractMatrix{T}`:  The input dataset to predict `y` from.
@@ -131,16 +134,16 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
     if dataset.weighted
         avgy = sum(dataset.y .* dataset.weights)/sum(dataset.weights)
         if typeof(dataset.X) <: CuArray
-            baselineMSE = MSE(dataset.y, CUDA.ones(T, dataset.n) .* avgy, dataset.weights)
+            baselineMSE = Loss(dataset.y, CUDA.ones(T, dataset.n) .* avgy, dataset.weights, options)
         else
-            baselineMSE = MSE(dataset.y, ones(T, dataset.n) .* avgy, dataset.weights)
+            baselineMSE = Loss(dataset.y, ones(T, dataset.n) .* avgy, dataset.weights, options)
         end
     else
         avgy = sum(dataset.y)/dataset.n
         if typeof(dataset.X) <: CuArray
-            baselineMSE = MSE(dataset.y, CUDA.ones(T, dataset.n) .* avgy)
+            baselineMSE = Loss(dataset.y, CUDA.ones(T, dataset.n) .* avgy, options)
         else
-            baselineMSE = MSE(dataset.y, ones(T, dataset.n) .* avgy)
+            baselineMSE = Loss(dataset.y, ones(T, dataset.n) .* avgy, options)
         end
     end
 
@@ -178,10 +181,10 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
         end
         if we_created_procs
             project_path = splitdir(Pkg.project().path)[1]
-            activate_env_on_workers(procs, project_path)
-            import_module_on_workers(procs, @__FILE__)
+            activate_env_on_workers(procs, project_path, options)
+            import_module_on_workers(procs, @__FILE__, options)
         end
-        move_functions_to_workers(T, procs, options)
+        move_functions_to_workers(procs, options, dataset)
         if runtests
             test_module_on_workers(procs, options)
         end
@@ -221,7 +224,7 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
         end
     end
 
-    println("Started!")
+    debug(options.verbosity, "Started!")
     cycles_complete = options.npopulations * niterations
     if options.warmupMaxsize != 0
         curmaxsize += 1
@@ -258,7 +261,7 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
                 for member in cur_pop.members
                     size = countNodes(member.tree)
                     frequencyComplexity[size] += 1
-                    # println(member, hallOfFame.members[size])
+                    # debug(options.verbosity, member, hallOfFame.members[size])
                     actualMaxsize = options.maxsize + maxdegree
                     if size < actualMaxsize && member.score < hallOfFame.members[size].score
                         hallOfFame.members[size] = copyPopMember(member)
@@ -349,7 +352,7 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
                 @printf("Progress: %d / %d total iterations (%.3f%%)\n", cycles_elapsed, options.npopulations * niterations, 100.0*cycles_elapsed/(options.npopulations*niterations))
                 @printf("Hall of Fame:\n")
                 @printf("-----------------------------------------\n")
-                @printf("%-10s  %-8s   %-8s  %-8s\n", "Complexity", "MSE", "Score", "Equation")
+                @printf("%-10s  %-8s   %-8s  %-8s\n", "Complexity", "Loss", "Score", "Equation")
                 @printf("%-10d  %-8.3e  %-8.3e  %-.f\n", 0, curMSE, 0f0, avgy)
             end
 

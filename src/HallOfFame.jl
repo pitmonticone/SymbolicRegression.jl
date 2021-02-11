@@ -1,3 +1,8 @@
+using FromFile
+@from "Core.jl" import CONST_TYPE, maxdegree, Node, Options, Dataset
+@from "PopMember.jl" import PopMember
+@from "LossFunctions.jl" import EvalLoss
+
 """ List of the best members seen all time in `.members` """
 mutable struct HallOfFame
     members::Array{PopMember, 1}
@@ -9,7 +14,11 @@ end
 """
     HallOfFame(options::Options)
 
-Create empty HallOfFame
+Create empty HallOfFame. The HallOfFame stores a list
+of `PopMember` objects in `.members`, which is enumerated
+by size (i.e., `.members[1]` is the constant solution).
+`.exists` is used to determine whether the particular member
+has been instantiated or not.
 """
 function HallOfFame(options::Options)
     actualMaxsize = options.maxsize + maxdegree

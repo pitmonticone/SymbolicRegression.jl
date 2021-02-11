@@ -2,14 +2,14 @@
 
 | Latest release | Documentation | Build status | Coverage |
 | --- | --- | --- | --- |
-| [![version](https://juliahub.com/docs/SymbolicRegression/version.svg)](https://juliahub.com/ui/Packages/SymbolicRegression/X2eIS) | [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://milescranmer.github.io/SymbolicRegression.jl/dev/) | [![CI](https://github.com/MilesCranmer/SymbolicRegression.jl/workflows/CI/badge.svg)](.github/workflows/CI.yml) | [![Coverage Status](https://coveralls.io/repos/github/MilesCranmer/SymbolicRegression.jl/badge.svg?branch=master)](https://coveralls.io/github/MilesCranmer/SymbolicRegression.jl?branch=master) |
-
-
+| [![version](https://juliahub.com/docs/SymbolicRegression/version.svg)](https://juliahub.com/ui/Packages/SymbolicRegression/X2eIS) | [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://milescranmer.github.io/SymbolicRegression.jl/dev/) [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://milescranmer.github.io/SymbolicRegression.jl/stable/)  | [![CI](https://github.com/MilesCranmer/SymbolicRegression.jl/workflows/CI/badge.svg)](.github/workflows/CI.yml) | [![Coverage Status](https://coveralls.io/repos/github/MilesCranmer/SymbolicRegression.jl/badge.svg?branch=master)](https://coveralls.io/github/MilesCranmer/SymbolicRegression.jl?branch=master) |
 
 Distributed High-Performance symbolic regression in Julia.
 
 Check out [PySR](https://github.com/MilesCranmer/PySR) for
 a Python frontend.
+
+<img src="https://astroautomata.com/data/sr_demo_image1.png" alt="demo1" width="700"/> <img src="https://astroautomata.com/data/sr_demo_image2.png" alt="demo2" width="700"/>
 
 [Cite this software](https://github.com/MilesCranmer/PySR/blob/master/CITATION.md)
 
@@ -71,4 +71,4 @@ end
 
 ## Search options
 
-See https://milescranmer.github.io/SymbolicRegression.jl/dev/api/#Options
+See https://milescranmer.github.io/SymbolicRegression.jl/stable/api/#Options
