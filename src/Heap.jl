@@ -2,8 +2,16 @@ using SparseArrays
 using FromFile
 @from "Core.jl" import Node, CONST_TYPE
 
+function evalElem(operator::Int, constant::CONST_TYPE,
+                  feature::Int, degree::Int, x::T,
+                  left::T, right::T)::T
+end
 
-function evaluateHeaps(i::Int, heaps::EquationHeaps, X::AbstractArray{T, 2}, options::Options)::AbstractArray{T, 2}
+function evaluateHeaps(i::Int, heaps::EquationHeaps,
+                       X::AbstractArray{T, 2}, options::Options)::AbstractArray{T, 2}
+    # Heaps are [node, tree]
+    # X is [feature, row]
+    # Output is [tree, row]
 	nfeature = size(X, 1)
 	nrows = size(X, 2)
 	nheaps = size(heaps, 2)
@@ -11,16 +19,35 @@ function evaluateHeaps(i::Int, heaps::EquationHeaps, X::AbstractArray{T, 2}, opt
 	if i > size(heaps, 1)
 		return spzeros(Int, nheaps, nrows)
 	end
-	left  = evaluateHeaps(2 * i,     heaps, X, options)
-	right = evaluateHeaps(2 * i + 1, heaps, X, options)
-	f(operator, constant, feature, degree) = (
-			convert(T, degree == 0) * (
-				convert(T, feature == 0) * constant
-				convert(T, feature > 0)  * X[max(feature, 1), :]
-			)
-			+ convert(T, degree == 1) * options.unaops[operator](_left)
-			+ convert(T, degree == 2) * options.binops[operator](_left, _right)
-	)
+	cumulator = evaluateHeaps(2 * i, heaps, X, options)
+	array2 =    evaluateHeaps(2 * i + 1, heaps, X, options)
+    for j=1:nrows
+        for k=1:nheaps
+            x = X[max(feature, 1), j]::T
+            o = operators[i, k]::Int
+            c = T(constants[i, k])
+            f = features[i, k]::Int
+            d = degrees[i, k]::Int
+            l = cumulator[k, j]::T
+            r = array2[k, j]::T
+            @inbounds cumulator[k, j] = (
+                 if d == 0
+                    if f == 0
+                        c
+                    else
+                        x
+                    end
+                elseif d == 1
+                    options.unaops[o](l) #Make into if statement.
+                else
+                    options.binops[o](l, r) #Make into if statement.
+                end
+            )
+        end
+    end
+    # Make array of flags for when nan/inf detected.
+    # Set the output of those arrays to 0, so they won't give an error.
+    return cumulator
 end
 
 mutable struct EquationHeap
