@@ -9,12 +9,12 @@ function build_op_strings(binops, unaops)
     else
         i = 1
         op = binops[i]
-        tmp = "\nif op == $i"
+        tmp = "\nif o == $i"
         for (i, op) in enumerate(binops)
             if i == 1
                 tmp *= "\n    $(op)(l, r)"
             else
-                tmp *= "\nelseif op == $i"
+                tmp *= "\nelseif o == $i"
                 tmp *= "\n    $(op)(l, r)"
             end
         end
@@ -26,12 +26,12 @@ function build_op_strings(binops, unaops)
     else
         i = 1
         op = unaops[i]
-        tmp = "\nif op == $i"
+        tmp = "\nif o == $i"
         for (i, op) in enumerate(unaops)
             if i == 1
                 tmp *= "\n    $(op)(l)"
             else
-                tmp *= "\nelseif op == $i"
+                tmp *= "\nelseif o == $i"
                 tmp *= "\n    $(op)(l)"
             end
         end
@@ -54,7 +54,7 @@ function build_heap_evaluator(options::Options)
             nheaps = size(heaps, 2)
 
             if i > size(heaps, 1)
-                return spzeros(Int, nheaps, nrows)
+                return zeros(Int, nheaps, nrows)
             end
             cumulator = evaluateHeaps(2 * i, heaps, X)
             array2 =    evaluateHeaps(2 * i + 1, heaps, X)
@@ -67,8 +67,7 @@ function build_heap_evaluator(options::Options)
                     d = degrees[i, k]::Int
                     l = cumulator[k, j]::T
                     r = array2[k, j]::T
-                    @inbounds cumulator[k, j] = (
-                         if d == 0
+                    out = if d == 0
                             if f == 0
                                 c
                             else
@@ -80,7 +79,7 @@ function build_heap_evaluator(options::Options)
                             $(Meta.parse(binops_str))
                              #Make into if statement.
                         end
-                    )
+                    @inbounds cumulator[k, j] = out
                 end
             end
             # Make array of flags for when nan/inf detected.
@@ -96,7 +95,7 @@ mutable struct EquationHeap
     feature::Array{Int, 1} #0=>use constant
     degree::Array{Int, 1} #0 for degree => stop the tree!
 
-    EquationHeap(n) = new(spzeros(Int, n), spzeros(CONST_TYPE, n), spzeros(Int, n), spzeros(Int, n))
+    EquationHeap(n) = new(zeros(Int, n), zeros(CONST_TYPE, n), zeros(Int, n), zeros(Int, n))
 end
 
 mutable struct EquationHeaps
@@ -105,7 +104,7 @@ mutable struct EquationHeaps
     feature::Array{Int, 2} #0=>use constant
     degree::Array{Int, 2} #0 for degree => stop the tree!
 
-    EquationHeaps(n, m) = new(spzeros(Int, n, m), spzeros(CONST_TYPE, n, m), spzeros(Int, n, m), spzeros(Int, n, m))
+    EquationHeaps(n, m) = new(zeros(Int, n, m), zeros(CONST_TYPE, n, m), zeros(Int, n, m), zeros(Int, n, m))
 end
 
 function populate_heap!(heap::EquationHeap, i::Int, tree::Node)::Nothing
