@@ -44,22 +44,19 @@ end
 function build_heap_evaluator(options::Options)
     binops_str, unaops_str = build_op_heap(options.binops, options.unaops)
     return quote
-        function evaluateHeaps(i::Int, heaps::EquationHeaps,
-                               X::AbstractArray{T, 2})::AbstractArray{T, 2}
-            # Heaps are [node, tree]
-            # X is [feature, row]
-            # Output is [tree, row]
-            nfeature = size(X, 1)
-            nrows = size(X, 2)
-            nheaps = size(heaps, 2)
+        function gpuEvalNodes!(i::Int, nrows::Int, nheaps::Int,
+                               cumulator::AbstractArray{T}, array2::AbstractArray{T})
+            #for j=1:nrows
+                #for k=1:nheaps
+            
+            index_j = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+            stride_j = blockDim().x * gridDim().x
 
-            if i > size(heaps, 1)
-                return zeros(Int, nheaps, nrows)
-            end
-            cumulator = evaluateHeaps(2 * i, heaps, X)
-            array2 =    evaluateHeaps(2 * i + 1, heaps, X)
-            for j=1:nrows
-                for k=1:nheaps
+            index_k = (blockIdx().y - 1) * blockDim().y + threadIdx().y
+            stride_k = blockDim().y * gridDim().y
+
+            for j=index_j:stride_j:nrows
+                for k=index_k:stride_k:nheaps
                     x = X[max(feature, 1), j]::T
                     o = operators[i, k]::Int
                     c = T(constants[i, k])
@@ -81,6 +78,25 @@ function build_heap_evaluator(options::Options)
                         end
                     @inbounds cumulator[k, j] = out
                 end
+            end
+        end
+
+        function evaluateHeaps(i::Int, heaps::EquationHeaps,
+                               X::AbstractArray{T, 2})::AbstractArray{T, 2}
+            # Heaps are [node, tree]
+            # X is [feature, row]
+            # Output is [tree, row]
+            nfeature = size(X, 1)
+            nrows = size(X, 2)
+            nheaps = size(heaps, 2)
+
+            if i > size(heaps, 1)
+                return CUDA.zeros(Int, nheaps, nrows)
+            end
+            cumulator = evaluateHeaps(2 * i, heaps, X)
+            array2 =    evaluateHeaps(2 * i + 1, heaps, X)
+            CUDA.@sync begin
+                @cuda threads=(256,256) blocks=(numblocks2,numblocks2) gpuEvalNodes!(cumulator, array2)
             end
             # Make array of flags for when nan/inf detected.
             # Set the output of those arrays to 0, so they won't give an error.
