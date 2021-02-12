@@ -2,52 +2,92 @@ using SparseArrays
 using FromFile
 @from "Core.jl" import Node, CONST_TYPE
 
-function evalElem(operator::Int, constant::CONST_TYPE,
-                  feature::Int, degree::Int, x::T,
-                  left::T, right::T)::T
+
+function build_op_strings(binops, unaops)
+    binops_str = if length(binops) == 0
+        "\nT(0)"
+    else
+        i = 1
+        op = binops[i]
+        tmp = "\nif op == $i"
+        for (i, op) in enumerate(binops)
+            if i == 1
+                tmp *= "\n    $(op)(l, r)"
+            else
+                tmp *= "\nelseif op == $i"
+                tmp *= "\n    $(op)(l, r)"
+            end
+        end
+        tmp * "\nend"
+    end
+
+    unaops_str = if length(unaops) == 0
+        "\nT(0)"
+    else
+        i = 1
+        op = unaops[i]
+        tmp = "\nif op == $i"
+        for (i, op) in enumerate(unaops)
+            if i == 1
+                tmp *= "\n    $(op)(l)"
+            else
+                tmp *= "\nelseif op == $i"
+                tmp *= "\n    $(op)(l)"
+            end
+        end
+        tmp * "\nend"
+    end
+
+    return binops_str, unaops_str
 end
 
-function evaluateHeaps(i::Int, heaps::EquationHeaps,
-                       X::AbstractArray{T, 2}, options::Options)::AbstractArray{T, 2}
-    # Heaps are [node, tree]
-    # X is [feature, row]
-    # Output is [tree, row]
-	nfeature = size(X, 1)
-	nrows = size(X, 2)
-	nheaps = size(heaps, 2)
+function build_heap_evaluator(options::Options)
+    binops_str, unaops_str = build_op_heap(options.binops, options.unaops)
+    return quote
+        function evaluateHeaps(i::Int, heaps::EquationHeaps,
+                               X::AbstractArray{T, 2})::AbstractArray{T, 2}
+            # Heaps are [node, tree]
+            # X is [feature, row]
+            # Output is [tree, row]
+            nfeature = size(X, 1)
+            nrows = size(X, 2)
+            nheaps = size(heaps, 2)
 
-	if i > size(heaps, 1)
-		return spzeros(Int, nheaps, nrows)
-	end
-	cumulator = evaluateHeaps(2 * i, heaps, X, options)
-	array2 =    evaluateHeaps(2 * i + 1, heaps, X, options)
-    for j=1:nrows
-        for k=1:nheaps
-            x = X[max(feature, 1), j]::T
-            o = operators[i, k]::Int
-            c = T(constants[i, k])
-            f = features[i, k]::Int
-            d = degrees[i, k]::Int
-            l = cumulator[k, j]::T
-            r = array2[k, j]::T
-            @inbounds cumulator[k, j] = (
-                 if d == 0
-                    if f == 0
-                        c
-                    else
-                        x
-                    end
-                elseif d == 1
-                    options.unaops[o](l) #Make into if statement.
-                else
-                    options.binops[o](l, r) #Make into if statement.
+            if i > size(heaps, 1)
+                return spzeros(Int, nheaps, nrows)
+            end
+            cumulator = evaluateHeaps(2 * i, heaps, X)
+            array2 =    evaluateHeaps(2 * i + 1, heaps, X)
+            for j=1:nrows
+                for k=1:nheaps
+                    x = X[max(feature, 1), j]::T
+                    o = operators[i, k]::Int
+                    c = T(constants[i, k])
+                    f = features[i, k]::Int
+                    d = degrees[i, k]::Int
+                    l = cumulator[k, j]::T
+                    r = array2[k, j]::T
+                    @inbounds cumulator[k, j] = (
+                         if d == 0
+                            if f == 0
+                                c
+                            else
+                                x
+                            end
+                        elseif d == 1
+                            $(Meta.parse(unaops_str))
+                        else
+                            $(Meta.parse(binops_str))
+                             #Make into if statement.
+                        end
+                    )
                 end
-            )
+            end
+            # Make array of flags for when nan/inf detected.
+            # Set the output of those arrays to 0, so they won't give an error.
+            return cumulator
         end
     end
-    # Make array of flags for when nan/inf detected.
-    # Set the output of those arrays to 0, so they won't give an error.
-    return cumulator
 end
 
 mutable struct EquationHeap
