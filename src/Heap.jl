@@ -23,34 +23,34 @@ end
 
 function build_op_strings(binops, unaops)
     binops_str = if length(binops) == 0
-        "\nT(0)"
+        ""
     else
         i = 1
         op = binops[i]
-        tmp = "\nif o == $i"
+        tmp = "\nif operator[i, k] == $i"
         for (i, op) in enumerate(binops)
             if i == 1
-                tmp *= "\n    $(op)(l, r)"
+                tmp *= "\n    @inbounds cumulator[k, j] = CUDA.cufunc($(op))(cumulator[k, j], array2[k, j])"
             else
-                tmp *= "\nelseif o == $i"
-                tmp *= "\n    $(op)(l, r)"
+                tmp *= "\nelseif operator[i, k] == $i"
+                tmp *= "\n    @inbounds cumulator[k, j] = CUDA.cufunc($(op))(cumulator[k, j], array2[k, j])"
             end
         end
         tmp * "\nend"
     end
 
     unaops_str = if length(unaops) == 0
-        "\nT(0)"
+        ""
     else
         i = 1
         op = unaops[i]
-        tmp = "\nif o == $i"
+        tmp = "\nif operator[i, k] == $i"
         for (i, op) in enumerate(unaops)
             if i == 1
-                tmp *= "\n    $(op)(l)"
+                tmp *= "\n    @inbounds cumulator[k, j] = CUDA.cufunc($(op))(cumulator[k, j])"
             else
-                tmp *= "\nelseif o == $i"
-                tmp *= "\n    $(op)(l)"
+                tmp *= "\nelseif operator[i, k] == $i"
+                tmp *= "\n    @inbounds cumulator[k, j] = CUDA.cufunc($(op))(cumulator[k, j])"
             end
         end
         tmp * "\nend"
@@ -64,43 +64,75 @@ function build_heap_evaluator(options::Options)
     return quote
         using CUDA
         function gpuEvalNodes!(i::Int, nrows::Int, nheaps::Int,
-                               operator::AbstractArray{Int, 2},
-                               constant::AbstractArray{CONST_TYPE, 2},
-                               feature::AbstractArray{Int, 2}, #0=>use constant
-                               degree::AbstractArray{Int, 2}, #0 for degree => stop the tree!
+                               operator::AbstractArray{Int},
+                               constant::AbstractArray{T},
+                               feature::AbstractArray{Int}, #0=>use constant
+                               degree::AbstractArray{Int}, #0 for degree => stop the tree!
                                cumulator::AbstractArray{T},
-                               array2::AbstractArray{T}) where {T<:Union{Float32,Float64}}
-            
-            index_j = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-            stride_j = blockDim().x * gridDim().x
+                               array2::AbstractArray{T},
+                               X::AbstractArray{T}) where {T<:Union{Float32,Float64}}
+            index = ((blockIdx()).x - 1) * (blockDim()).x + (threadIdx()).x
+            stride = (blockDim()).x * (gridDim()).x
+            n = (nrows*nheaps)
 
-            index_k = (blockIdx().y - 1) * blockDim().y + threadIdx().y
-            stride_k = blockDim().y * gridDim().y
-
-            for j=index_j:stride_j:nrows
-                for k=index_k:stride_k:nheaps
-                    o = operator[i, k]
-                    c = constant[i, k]
-                    f = feature[i, k]
-                    x = X[max(f, 1), j]
-                    d = degree[i, k]
-                    l = cumulator[k, j]
-                    r = array2[k, j]
-                    out = if d == 0
-                            if f == 0
-                                T(c)
-                            else
-                                x
-                            end
-                        elseif d == 1
-                            $(Meta.parse(unaops_str))
-                        else
-                            $(Meta.parse(binops_str))
-                             #Make into if statement.
-                        end
-                    @inbounds cumulator[k, j] = out
+            for _j = index:stride:n
+                j = ceil(Int, _j/nheaps)
+                k = ((_j - 1) % nheaps) + 1
+                if degree[i, k] == 0
+                    if feature[i, k] == 0
+                        @inbounds cumulator[k, j] = constant[i, k]
+                    else
+                        @inbounds cumulator[k, j] = X[feature[i,k], j]
+                    end
+                elseif degree[i, k] == 1
+                    $(Meta.parse(unaops_str))
+                else
+                    $(Meta.parse(binops_str))
+                     #Make into if statement.
                 end
             end
+        end
+        function evaluateHeapArrays(i::Int, 
+                               operator::AbstractArray{Int},
+                               constant::AbstractArray{T},
+                               feature::AbstractArray{Int}, #0=>use constant
+                               degree::AbstractArray{Int}, #0 for degree => stop the tree!
+                               X::AbstractArray{T, 2})::AbstractArray{T, 2} where {T<:Real}
+            nfeature = size(X, 1)
+            nrows = size(X, 2)
+            nheaps = size(operator, 2)
+            depth = size(operator, 1)
+
+            if i > depth
+                return CUDA.zeros(Float32, nheaps, nrows)
+            end
+            cumulator = evaluateHeapArrays(2 * i,     operator, constant, feature, degree, X)
+            array2    = evaluateHeapArrays(2 * i + 1, operator, constant, feature, degree, X)
+
+            numblocks = ceil(Int, nrows*nheaps/256)
+
+            CUDA.@sync begin
+                @cuda threads=256 blocks=numblocks gpuEvalNodes!(i, nrows, nheaps, operator, constant, feature, degree, cumulator, array2, X)
+            end
+            # Make array of flags for when nan/inf detected.
+            # Set the output of those arrays to 0, so they won't give an error.
+            return cumulator
+        end
+
+        function evaluateHeaps(i::Int, heaps::EquationHeaps,
+                               X::AbstractArray{T, 2})::AbstractArray{T, 2} where {T<:Real}
+            # Heaps are [node, tree]
+            # X is [feature, row]
+            # Output is [tree, row]
+            operator = cu(heaps.operator)
+            constant = cu(T.(heaps.constant))
+            feature  = cu(heaps.feature)
+            degree   = cu(heaps.degree)
+            _X       = cu(X)
+            CUDA.@sync begin
+                out = evaluateHeapArrays(i, operator, constant, feature, degree, _X)
+            end
+            return out
         end
     end
 end
@@ -108,45 +140,6 @@ end
 function compile_heap_evaluator(options::Options)
     func_str = build_heap_evaluator(options)
     Base.MainInclude.eval(func_str)
-end
-
-function evaluateHeaps(i::Int, heaps::EquationHeaps,
-                       X::AbstractArray{T, 2})::AbstractArray{T, 2} where {T<:Real}
-    # Heaps are [node, tree]
-    # X is [feature, row]
-    # Output is [tree, row]
-
-    operator = CuArray(heaps.operator)
-    constant = CuArray(heaps.constant)
-    feature  = CuArray(heaps.feature)
-    degree   = CuArray(heaps.degree)
-
-    nfeature = size(X, 1)
-    nrows = size(X, 2)
-    nheaps = size(operator, 2)
-    depth = size(operator, 1)
-
-    if i > depth
-        return CUDA.zeros(Int, nheaps, nrows)
-    end
-    # cumulator = evaluateHeaps(2 * i, heaps, X)
-    # array2    = evaluateHeaps(2 * i + 1, heaps, X)
-    cumulator = CUDA.randn(Float32, nheaps, nrows)
-    array2 = CUDA.randn(Float32, nheaps, nrows)
-
-    #nrows, nheaps
-
-    numblocks_x = ceil(Int, nrows/256)
-    numblocks_y = ceil(Int, nheaps/256)
-
-    CUDA.@sync begin
-        @cuda threads=(256, 256) blocks=(numblocks_x, numblocks_y) gpuEvalNodes!(i, nrows, nheaps,
-                                                                                 operator, constant, feature,
-                                                                                 degree, cumulator, array2)
-    end
-    # Make array of flags for when nan/inf detected.
-    # Set the output of those arrays to 0, so they won't give an error.
-    return cumulator
 end
 
 function populate_heap!(heap::EquationHeap, i::Int, tree::Node)::Nothing
@@ -186,14 +179,14 @@ function populate_heaps!(heaps::EquationHeaps, i::Int, j::Int, tree::Node)::Noth
             return
         end
     elseif tree.degree == 1
-        heaps.degree[i] = 1
-        heaps.operator[i] = tree.op
+        heaps.degree[i, j] = 1
+        heaps.operator[i, j] = tree.op
         left = 2 * i
         populate_heaps!(heaps, left, j, tree.l)
         return
     else
-        heaps.degree[i] = 2
-        heaps.operator[i] = tree.op
+        heaps.degree[i, j] = 2
+        heaps.operator[i, j] = tree.op
         left = 2 * i
         right = 2 * i + 1
         populate_heaps!(heaps, left, j, tree.l)
