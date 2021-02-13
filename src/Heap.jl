@@ -69,7 +69,7 @@ function build_heap_evaluator(options::Options)
                                feature::AbstractArray{Int, 2}, #0=>use constant
                                degree::AbstractArray{Int, 2}, #0 for degree => stop the tree!
                                cumulator::AbstractArray{T},
-                               array2::AbstractArray{T}) where {T<:Real}
+                               array2::AbstractArray{T}) where {T<:Union{Float32,Float64}}
             
             index_j = (blockIdx().x - 1) * blockDim().x + threadIdx().x
             stride_j = blockDim().x * gridDim().x
