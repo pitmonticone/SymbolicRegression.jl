@@ -1,7 +1,25 @@
+using CUDA
 using SparseArrays
 using FromFile
-@from "Core.jl" import Node, CONST_TYPE
+@from "Core.jl" import Node, CONST_TYPE, Options
 
+mutable struct EquationHeap
+    operator::Array{Int, 1}
+    constant::Array{CONST_TYPE, 1}
+    feature::Array{Int, 1} #0=>use constant
+    degree::Array{Int, 1} #0 for degree => stop the tree!
+
+    EquationHeap(n) = new(zeros(Int, n), zeros(CONST_TYPE, n), zeros(Int, n), zeros(Int, n))
+end
+
+mutable struct EquationHeaps
+    operator::Array{Int, 2}
+    constant::Array{CONST_TYPE, 2}
+    feature::Array{Int, 2} #0=>use constant
+    degree::Array{Int, 2} #0 for degree => stop the tree!
+
+    EquationHeaps(n, m) = new(zeros(Int, n, m), zeros(CONST_TYPE, n, m), zeros(Int, n, m), zeros(Int, n, m))
+end
 
 function build_op_strings(binops, unaops)
     binops_str = if length(binops) == 0
@@ -42,12 +60,16 @@ function build_op_strings(binops, unaops)
 end
 
 function build_heap_evaluator(options::Options)
-    binops_str, unaops_str = build_op_heap(options.binops, options.unaops)
+    binops_str, unaops_str = build_op_strings(options.binops, options.unaops)
     return quote
+        using CUDA
         function gpuEvalNodes!(i::Int, nrows::Int, nheaps::Int,
-                               cumulator::AbstractArray{T}, array2::AbstractArray{T})
-            #for j=1:nrows
-                #for k=1:nheaps
+                               operator::AbstractArray{Int, 2},
+                               constant::AbstractArray{CONST_TYPE, 2},
+                               feature::AbstractArray{Int, 2}, #0=>use constant
+                               degree::AbstractArray{Int, 2}, #0 for degree => stop the tree!
+                               cumulator::AbstractArray{T},
+                               array2::AbstractArray{T}) where {T<:Real}
             
             index_j = (blockIdx().x - 1) * blockDim().x + threadIdx().x
             stride_j = blockDim().x * gridDim().x
@@ -57,16 +79,16 @@ function build_heap_evaluator(options::Options)
 
             for j=index_j:stride_j:nrows
                 for k=index_k:stride_k:nheaps
-                    x = X[max(feature, 1), j]::T
-                    o = operators[i, k]::Int
-                    c = T(constants[i, k])
-                    f = features[i, k]::Int
-                    d = degrees[i, k]::Int
-                    l = cumulator[k, j]::T
-                    r = array2[k, j]::T
+                    o = operator[i, k]
+                    c = constant[i, k]
+                    f = feature[i, k]
+                    x = X[max(f, 1), j]
+                    d = degree[i, k]
+                    l = cumulator[k, j]
+                    r = array2[k, j]
                     out = if d == 0
                             if f == 0
-                                c
+                                T(c)
                             else
                                 x
                             end
@@ -80,47 +102,51 @@ function build_heap_evaluator(options::Options)
                 end
             end
         end
-
-        function evaluateHeaps(i::Int, heaps::EquationHeaps,
-                               X::AbstractArray{T, 2})::AbstractArray{T, 2}
-            # Heaps are [node, tree]
-            # X is [feature, row]
-            # Output is [tree, row]
-            nfeature = size(X, 1)
-            nrows = size(X, 2)
-            nheaps = size(heaps, 2)
-
-            if i > size(heaps, 1)
-                return CUDA.zeros(Int, nheaps, nrows)
-            end
-            cumulator = evaluateHeaps(2 * i, heaps, X)
-            array2 =    evaluateHeaps(2 * i + 1, heaps, X)
-            CUDA.@sync begin
-                @cuda threads=(256,256) blocks=(numblocks2,numblocks2) gpuEvalNodes!(cumulator, array2)
-            end
-            # Make array of flags for when nan/inf detected.
-            # Set the output of those arrays to 0, so they won't give an error.
-            return cumulator
-        end
     end
 end
 
-mutable struct EquationHeap
-    operator::Array{Int, 1}
-    constant::Array{CONST_TYPE, 1}
-    feature::Array{Int, 1} #0=>use constant
-    degree::Array{Int, 1} #0 for degree => stop the tree!
-
-    EquationHeap(n) = new(zeros(Int, n), zeros(CONST_TYPE, n), zeros(Int, n), zeros(Int, n))
+function compile_heap_evaluator(options::Options)
+    func_str = build_heap_evaluator(options)
+    Base.MainInclude.eval(func_str)
 end
 
-mutable struct EquationHeaps
-    operator::Array{Int, 2}
-    constant::Array{CONST_TYPE, 2}
-    feature::Array{Int, 2} #0=>use constant
-    degree::Array{Int, 2} #0 for degree => stop the tree!
+function evaluateHeaps(i::Int, heaps::EquationHeaps,
+                       X::AbstractArray{T, 2})::AbstractArray{T, 2} where {T<:Real}
+    # Heaps are [node, tree]
+    # X is [feature, row]
+    # Output is [tree, row]
 
-    EquationHeaps(n, m) = new(zeros(Int, n, m), zeros(CONST_TYPE, n, m), zeros(Int, n, m), zeros(Int, n, m))
+    operator = CuArray(heaps.operator)
+    constant = CuArray(heaps.constant)
+    feature  = CuArray(heaps.feature)
+    degree   = CuArray(heaps.degree)
+
+    nfeature = size(X, 1)
+    nrows = size(X, 2)
+    nheaps = size(operator, 2)
+    depth = size(operator, 1)
+
+    if i > depth
+        return CUDA.zeros(Int, nheaps, nrows)
+    end
+    # cumulator = evaluateHeaps(2 * i, heaps, X)
+    # array2    = evaluateHeaps(2 * i + 1, heaps, X)
+    cumulator = CUDA.randn(Float32, nheaps, nrows)
+    array2 = CUDA.randn(Float32, nheaps, nrows)
+
+    #nrows, nheaps
+
+    numblocks_x = ceil(Int, nrows/256)
+    numblocks_y = ceil(Int, nheaps/256)
+
+    CUDA.@sync begin
+        @cuda threads=(256, 256) blocks=(numblocks_x, numblocks_y) gpuEvalNodes!(i, nrows, nheaps,
+                                                                                 operator, constant, feature,
+                                                                                 degree, cumulator, array2)
+    end
+    # Make array of flags for when nan/inf detected.
+    # Set the output of those arrays to 0, so they won't give an error.
+    return cumulator
 end
 
 function populate_heap!(heap::EquationHeap, i::Int, tree::Node)::Nothing
