@@ -2,6 +2,7 @@ using CUDA
 using SparseArrays
 using FromFile
 @from "Core.jl" import Node, CONST_TYPE, Options
+@from "EquationUtils.jl" import countDepth
 
 mutable struct EquationHeap
     operator::Array{Int, 1}
@@ -204,10 +205,15 @@ end
 
 function heapify_trees(trees::Array{Node, 1}, max_depth::Int)
     max_nodes = 2^(max_depth-1) + 1
-	num_trees = size(trees, 1)
+    num_trees = size(trees, 1)
     heaps = EquationHeaps(max_nodes, num_trees)
-	for j=1:num_trees
-		populate_heaps!(heaps, 1, j, trees[j])
-	end
+    for j=1:num_trees
+        populate_heaps!(heaps, 1, j, trees[j])
+    end
     return heaps
+end
+
+function heapify_trees(trees::Array{Node, 1})
+    max_depth = max([countDepth(tree) for tree in trees]...) + 1
+    return heapify_trees(trees, max_depth)
 end
