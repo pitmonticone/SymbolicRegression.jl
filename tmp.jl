@@ -1,20 +1,26 @@
 using CUDA
 using FromFile
 @from "src/Core.jl" import Node, CONST_TYPE, Options
+@from "src/MutationFunctions.jl" import genRandomTree
 @from "src/Heap.jl" import EquationHeap, EquationHeaps, build_op_strings, build_heap_evaluator, compile_heap_evaluator, populate_heap!, populate_heaps!, heapify_tree, heapify_trees
 
 X = CUDA.randn(Float32, 5, 300)
 options = Options(binary_operators=(+, *, -, /),
                   unary_operators=(cos, exp),
                   npopulations=30);
-tree = cos(Node(1) * 3f0 - Node(3)) + 2f0
+# function genRandomTree(length::Int, options::Options, nfeatures::Int)::Node
 
-heaps = heapify_trees([tree], 10)
 
-evaler = build_heap_evaluator(options)
 compile_heap_evaluator(options)
 
-evaluateHeaps(1, heaps, X)
+using BenchmarkTools
+
+trees = [genRandomTree(8, options, 5) for i=1:300];
+
+heaps = heapify_trees(trees[1:100], 10);
+@btime evaluateHeaps(1, heaps, X);
+heaps = heapify_trees(trees[1:end], 10);
+@btime evaluateHeaps(1, heaps, X);
 
 
 # # Here is how you declare a function GPU-ready:

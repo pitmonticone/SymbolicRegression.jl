@@ -6,6 +6,7 @@ using LossFunctions
 # passing huge options at once.
 @from "Operators.jl" import plus, pow, mult, sub, div, log_abs, log10_abs, log2_abs, sqrt_abs
 @from "Equation.jl" import Node
+@from "Heap.jl" import compile_heap_evaluator
 
 """
          build_constraints(una_constraints, bin_constraints,
@@ -130,6 +131,8 @@ struct Options{A,B,C<:Union{SupervisedLoss,Function}}
     nbin::Int
     seed::Union{Int, Nothing}
     loss::C
+    cuda::Bool
+    cuda_evaluator::Function
 
 end
 
@@ -271,7 +274,8 @@ function Options(;
     probNegate=0.01f0,
     seed=nothing,
     bin_constraints=nothing,
-    una_constraints=nothing
+    una_constraints=nothing,
+    cuda=false
    ) where {nuna,nbin}
 
     if hofFile == nothing
@@ -343,7 +347,13 @@ function Options(;
         end
     end
 
-    Options{typeof(binary_operators),typeof(unary_operators), typeof(loss)}(binary_operators, unary_operators, bin_constraints, una_constraints, ns, parsimony, alpha, maxsize, maxdepth, fast_cycle, migration, hofMigration, fractionReplacedHof, shouldOptimizeConstants, hofFile, npopulations, nrestarts, perturbationFactor, annealing, batching, batchSize, mutationWeights, warmupMaxsize, useFrequency, npop, ncyclesperiteration, fractionReplaced, topn, verbosity, probNegate, nuna, nbin, seed, loss)
+    if cuda
+        cuda_evaluator = compile_heap_evaluator(binary_operators, unary_operators)
+    else
+        cuda_evaluator = x -> x
+    end
+
+    Options{typeof(binary_operators),typeof(unary_operators), typeof(loss)}(binary_operators, unary_operators, bin_constraints, una_constraints, ns, parsimony, alpha, maxsize, maxdepth, fast_cycle, migration, hofMigration, fractionReplacedHof, shouldOptimizeConstants, hofFile, npopulations, nrestarts, perturbationFactor, annealing, batching, batchSize, mutationWeights, warmupMaxsize, useFrequency, npop, ncyclesperiteration, fractionReplaced, topn, verbosity, probNegate, nuna, nbin, seed, loss, cuda, cuda_evaluator)
 end
 
 

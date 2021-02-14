@@ -7,12 +7,43 @@ using FromFile
 @from "MutationFunctions.jl" import genRandomTree, mutateConstant, mutateOperator, appendRandomOp, prependRandomOp, insertRandomOp, deleteRandomOp
 @from "SimplifyEquation.jl" import simplifyTree, combineOperators, simplifyWithSymbolicUtils
 
+function evaluateNewTree(dataset::Dataset{T}, baseline::T,
+                         tree::Node, options::Options) where {T<:Real}
+    if options.batching
+        return scoreFuncBatch(dataset, baseline, tree, options)
+    else
+        return scoreFunc(dataset, baseline, tree, options)
+    end
+end
+
+
+function acceptMutationStep(afterLoss::T, beforeLoss::T,
+                            tree::Node, prev::Node, temperature::T,
+                            frequencyComplexity::AbstractVector{T},
+                            options::Options)::PopMember where {T<:Real}
+    if options.annealing
+        delta = afterLoss - beforeLoss
+        probChange = exp(-delta/(temperature*options.alpha))
+        if options.useFrequency
+            oldSize = countNodes(prev)
+            newSize = countNodes(tree)
+            probChange *= frequencyComplexity[oldSize] / frequencyComplexity[newSize]
+        end
+
+        return_unaltered = (isnan(afterLoss) || probChange < rand())
+        if return_unaltered
+            return PopMember(copyNode(prev), beforeLoss)
+        end
+    end
+    return PopMember(tree, afterLoss)
+end
+
 # Go through one simulated options.annealing mutation cycle
 #  exp(-delta/T) defines probability of accepting a change
 function nextGeneration(dataset::Dataset{T},
                         baseline::T, member::PopMember, temperature::T,
                         curmaxsize::Int, frequencyComplexity::AbstractVector{T},
-                        options::Options)::PopMember where {T<:Real}
+                        options::Options; delayEvaluation::Bool=false)::PopMember where {T<:Real}
 
     prev = member.tree
     tree = prev
@@ -109,27 +140,11 @@ function nextGeneration(dataset::Dataset{T},
 
     if !successful_mutation
         return PopMember(copyNode(prev), beforeLoss)
-    end
-
-    if options.batching
-        afterLoss = scoreFuncBatch(dataset, baseline, tree, options)
+    elseif delayEvaluation
+        return PopMember(tree, T(0)) #Fake loss. Need to update loss later.
     else
-        afterLoss = scoreFunc(dataset, baseline, tree, options)
+        afterLoss = evaluateNewTree(dataset, baseline, tree, options)
+        return acceptMutationStep(afterLoss, beforeLoss, tree, prev, temperature,
+                                  frequencyComplexity, options)
     end
-
-    if options.annealing
-        delta = afterLoss - beforeLoss
-        probChange = exp(-delta/(temperature*options.alpha))
-        if options.useFrequency
-            oldSize = countNodes(prev)
-            newSize = countNodes(tree)
-            probChange *= frequencyComplexity[oldSize] / frequencyComplexity[newSize]
-        end
-
-        return_unaltered = (isnan(afterLoss) || probChange < rand())
-        if return_unaltered
-            return PopMember(copyNode(prev), beforeLoss)
-        end
-    end
-    return PopMember(tree, afterLoss)
 end

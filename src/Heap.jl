@@ -1,8 +1,6 @@
 using CUDA
-using SparseArrays
 using FromFile
-@from "Core.jl" import Node, CONST_TYPE, Options
-@from "EquationUtils.jl" import countDepth
+@from "Equation.jl" import Node, CONST_TYPE
 
 mutable struct EquationHeap
     operator::Array{Int, 1}
@@ -60,8 +58,8 @@ function build_op_strings(binops, unaops)
     return binops_str, unaops_str
 end
 
-function build_heap_evaluator(options::Options)
-    binops_str, unaops_str = build_op_strings(options.binops, options.unaops)
+function build_heap_evaluator(binops, unaops)
+    binops_str, unaops_str = build_op_strings(binops, unaops)
     return quote
         using CUDA
         function gpuEvalNodes!(i::Int, nrows::Int, nheaps::Int,
@@ -135,12 +133,13 @@ function build_heap_evaluator(options::Options)
             end
             return out
         end
+        evaluateHeaps
     end
 end
 
-function compile_heap_evaluator(options::Options)
-    func_str = build_heap_evaluator(options)
-    Base.MainInclude.eval(func_str)
+function compile_heap_evaluator(binops, unaops)
+    func_str = build_heap_evaluator(binops, unaops)
+    return eval(func_str)
 end
 
 function populate_heap!(heap::EquationHeap, i::Int, tree::Node)::Nothing
@@ -212,6 +211,8 @@ function heapify_trees(trees::Array{Node, 1}, max_depth::Int)
     end
     return heaps
 end
+
+@from "EquationUtils.jl" import countDepth
 
 function heapify_trees(trees::Array{Node, 1})
     max_depth = max([countDepth(tree) for tree in trees]...) + 1

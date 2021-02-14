@@ -69,6 +69,7 @@ using Reexport
 @from "PopMember.jl" import PopMember, copyPopMember
 @from "Population.jl" import Population, bestSubPop
 @from "HallOfFame.jl" import HallOfFame, calculateParetoFrontier
+@from "Heap.jl" import compile_heap_evaluator
 @from "SingleIteration.jl" import SRCycle, OptimizeAndSimplifyPopulation
 @from "InterfaceSymbolicUtils.jl" import node_to_symbolic, symbolic_to_node
 @from "CustomSymbolicUtilsSimplification.jl" import custom_simplify
@@ -196,6 +197,11 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
         move_functions_to_workers(procs, options, dataset)
         if runtests
             test_module_on_workers(procs, options)
+        end
+        if options.cuda
+            for op in (gpuEvalNodes!, evaluateHeapArrays evaluateHeaps)
+                copy_definition_to_workers(op, procs, options)
+            end
         end
 
         if runtests
