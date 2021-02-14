@@ -139,7 +139,7 @@ end
 
 function compile_heap_evaluator(binops, unaops)
     func_str = build_heap_evaluator(binops, unaops)
-    return eval(func_str)
+    return Base.MainInclude.eval(func_str)
 end
 
 function populate_heap!(heap::EquationHeap, i::Int, tree::Node)::Nothing

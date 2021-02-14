@@ -132,7 +132,6 @@ struct Options{A,B,C<:Union{SupervisedLoss,Function}}
     seed::Union{Int, Nothing}
     loss::C
     cuda::Bool
-    cuda_evaluator::Function
 
 end
 
@@ -347,13 +346,7 @@ function Options(;
         end
     end
 
-    if cuda
-        cuda_evaluator = compile_heap_evaluator(binary_operators, unary_operators)
-    else
-        cuda_evaluator = x -> x
-    end
-
-    Options{typeof(binary_operators),typeof(unary_operators), typeof(loss)}(binary_operators, unary_operators, bin_constraints, una_constraints, ns, parsimony, alpha, maxsize, maxdepth, fast_cycle, migration, hofMigration, fractionReplacedHof, shouldOptimizeConstants, hofFile, npopulations, nrestarts, perturbationFactor, annealing, batching, batchSize, mutationWeights, warmupMaxsize, useFrequency, npop, ncyclesperiteration, fractionReplaced, topn, verbosity, probNegate, nuna, nbin, seed, loss, cuda, cuda_evaluator)
+    Options{typeof(binary_operators),typeof(unary_operators), typeof(loss)}(binary_operators, unary_operators, bin_constraints, una_constraints, ns, parsimony, alpha, maxsize, maxdepth, fast_cycle, migration, hofMigration, fractionReplacedHof, shouldOptimizeConstants, hofFile, npopulations, nrestarts, perturbationFactor, annealing, batching, batchSize, mutationWeights, warmupMaxsize, useFrequency, npop, ncyclesperiteration, fractionReplaced, topn, verbosity, probNegate, nuna, nbin, seed, loss, cuda)
 end
 
 

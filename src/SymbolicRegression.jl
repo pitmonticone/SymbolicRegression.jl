@@ -178,6 +178,10 @@ function EquationSearch(X::AbstractMatrix{T}, y::AbstractVector{T};
     ##########################################################################
     ### Distributed code:
     ##########################################################################
+    if options.cuda
+        compile_heap_evaluator(binary_operators, unary_operators)
+    end
+
     if parallel
         if numprocs == nothing && procs == nothing
             numprocs = 4
