@@ -363,4 +363,13 @@ function deg2_diff_eval(
     return (out, no_nans)
 end
 
+# Create callable definitions of Node:
+function (tree::Node)(X::AbstractMatrix{T}, options::Options)::AbstractVector{T} where {T}
+    output, complete = eval_tree_array(tree, X, options)
+    if !complete
+        error("eval_tree_array failed for tree $(repr(tree))")
+    end
+    return output
+end
+
 end
